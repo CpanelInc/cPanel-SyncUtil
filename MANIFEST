@@ -1,0 +1,9 @@
+Changes
+Makefile.PL
+MANIFEST
+README
+t/cPanel-SyncUtil.t
+lib/cPanel/SyncUtil.pm
+scripts/cpanelsync_build_cpaddons_dir
+scripts/cpanelsync_build_dir
+META.yml                                 Module meta-data (added by MakeMaker)

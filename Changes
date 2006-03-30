@@ -1,0 +1,5 @@
+Revision history for Perl extension cPanel::SyncUtil.
+
+0.0.1  Wed Mar 22 14:44:49 2006
+	- original version; created by h2xs 1.23 with options
+		-AXc -n cPanel::SyncUtil
