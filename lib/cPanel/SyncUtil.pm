@@ -8,7 +8,7 @@ use File::Spec;
 use File::Slurp;
 use Digest::MD5::File;
 
-use version; our $VERSION = qv('0.0.1');
+use version; our $VERSION = qv('0.0.2');
 
 require Exporter;
 our @ISA = qw(Exporter);

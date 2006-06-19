@@ -172,16 +172,13 @@ elsif ( $options{'a'} eq 'unlock' ) {
 die "-c may only be one of the directories in $root"
     if defined $options{'c'} &&  $options{'c'} ne '' && ! -d "$root/$options{'c'}";
 
+chdir $root or die "Could not go into $root: $!";
+
 ROOT:
 for my $dir ( cPanel::SyncUtil::_read_dir($root) ) {
     next ROOT if !cPanel::SyncUtil::_safe_cpsync_dir($dir)
                  || ( defined $options{'c'} && $options{'c'} ne '' && $dir ne $options{'c'} )
                  ;
-
-    if ( !chdir "$root/" ) {
-        warn "Could not go into $root/$dir: $!";
-        next ROOT;
-    }
 
     cPanel::SyncUtil::_chown_pwd_recursively( $user, $group );
 
