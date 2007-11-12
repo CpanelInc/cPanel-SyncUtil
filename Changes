@@ -1,5 +1,9 @@
 Revision history for Perl extension cPanel::SyncUtil.
 
+0.0.3  Thu Nov  8 09:07:00 2007
+	- added Ben Thomas' build_cpanelsync(), compress_files(), get_files_from_cpanelsync(), bzip_file(), _read_dir_recursively(),  _get_bzip_binary(), and _chown_recursively() functions/tests to help make it easier to work with
+	- created POD for those changes
+	
 0.0.2  Mon Jun 19 10:31:02 2006 
 	- fixed problem with sample script, no change to module except version
 

@@ -2,109 +2,158 @@ package cPanel::SyncUtil;
 
 use strict;
 use warnings;
-use Carp;
-use File::Spec;
+use Carp              ();
+use File::Spec        ();
+use File::Slurp       ();
+use File::Find        ();
+use Digest::MD5::File ();
+use Cwd               ();
+use Archive::Tar      ();
 
-use File::Slurp;
-use Digest::MD5::File;
-
-use version; our $VERSION = qv('0.0.2');
+use version; our $VERSION = qv('0.0.3');
 
 require Exporter;
-our @ISA = qw(Exporter);
+our @ISA       = qw(Exporter);
 our @EXPORT_OK = qw(
-    _read_dir        _write_file
-    _raw_dir         _chown_pwd_recursively 
-    _get_opts_hash   _sync_touchlock_pwd 
-    _safe_cpsync_dir _unlock
-    _lock
+	build_cpanelsync
+	compress_files
+	_write_file
+	_read_dir
+	_read_dir_recursively
+	_lock
+	_unlock
+	_safe_cpsync_dir
+	_chown_pwd_recursively
+	_chown_recursively
+	_raw_dir
+	_sync_touchlock_pwd
+	_get_opts_hash
 );
+
 our %EXPORT_TAGS = ( 'all' => \@EXPORT_OK );
 
-sub _read_dir   { goto &read_dir;   }
+our $bzip;
 
-sub _write_file { goto &write_file; }
+sub _write_file { goto &File::Slurp::write_file; }
+
+sub _read_dir { goto &File::Slurp::read_dir; }
+
+sub _read_dir_recursively {
+    my $dir = shift;
+    return if ( !$dir || !-d $dir );
+    my @files;
+    my $wanted = sub {
+        return if $File::Find::name eq '.';
+        push @files, $File::Find::name;
+    };
+    File::Find::find( { 'wanted' => $wanted, 'no_chdir' => 1, 'follow' => 0, }, $dir );
+    return wantarray ? @files : \@files;
+}
 
 sub _lock {
-    for(@_) {
+    for (@_) {
         next if !-d $_;
-        _write_file(File::Spec->catfile($_, '.cpanelsync.lock'), 'locked');
+        _write_file( File::Spec->catfile( $_, '.cpanelsync.lock' ), 'locked' );
     }
 }
 
 sub _unlock {
-    for(@_) {
+    for (@_) {
         next if !-d $_;
-        _write_file(File::Spec->catfile($_, '.cpanelsync.lock'), '');
+        _write_file( File::Spec->catfile( $_, '.cpanelsync.lock' ), '' );
     }
 }
 
 sub _safe_cpsync_dir {
-    my ($dir) = @_;
-    return 1 if defined $dir
-                && $dir !~ /\.bak/
-                && $dir !~ /^\./
-                && -d $dir
-                && !-l $dir
-                ;
+    my $dir = shift;
+    return 1
+      if defined $dir
+          && $dir !~ m/\.bak$/
+          && $dir !~ m/^\./
+          && -d $dir
+          && !-l $dir;
     return 0;
 }
 
 sub _chown_pwd_recursively {
     my ( $user, $group ) = @_;
+    _chown_recursively( $user, $group, '.' );
+}
 
+sub _chown_recursively {
+    my ( $user, $group, $dir );
+    
+    if( @_ == 3 ) {
+        ($user, $group, $dir) = @_;
+    }
+    elsif ( @_ == 2 ) {
+        ($user, $dir) = @_;
+    }
+    else {
+        Carp::croak('improper arguments');
+    }
+    
     my $chown = defined $group ? "$user:$group" : $user;
-    croak 'User [and group] must be ^\w+$' if $chown !~ m{^\w+(\:\w+)?$};
+    Carp::croak 'User [and group] must be ^\w+$' if $chown !~ m{^\w+(\:\w+)?$};
 
-    system 'chown', '-R', $chown, '.';
+    Carp::croak "Invalid directory $dir" if !-d $dir;
+    
+    system 'chown', '-R', $chown, $dir;
 }
 
 sub _raw_dir {
-    require Archive::Tar;
-    require Cwd;
     my ( $base, $archive, $verbose, @files ) = @_;
-    my $bz2_opt = $verbose ? '-kv' : '-k';
+    my $bz2_opt = $verbose ? '-fkv' : '-fk';
     my $pwd = Cwd::cwd();
-    chdir $base or return;
-    if(!-d $archive) {
+    if ( !-d $base ) {
+        Carp::cluck "Invalid base directory $base";
+        return;
+    }
+    elsif ( !chdir $base ) {
+        Carp::cluck "Unable to chdir to directory $base: $!";
+        return;
+    }
+
+    if ( !-d $archive ) {
         $! = 20;
         return;
     }
-    if($archive ne '.') {
+    elsif ( $archive eq '.' ) {
+        Carp::cluck "Current directory '.' cannot be used as the archive destination";
+        return;
+    }
+    else {
         my $tar = Archive::Tar->new();
-        for my $file ( _read_dir($archive) ) {
-            next if $file !~ m{\.bz2\.bz2$} || $file =~ m{\.bz2$};
+        foreach my $file ( _read_dir($archive) ) {
+            if ( $file =~ m{\.bz2$} && !-e $file . '.bz2.bz2' ) {    # I don't believe this is correct
+                next;
+            }
             $tar->add_files("$archive/$file");
         }
-        $tar->write("$archive.tar");
+        $tar->write( $archive . '.tar' );
+        system 'bzip2', $bz2_opt, $archive . '.tar';
+        unlink $archive . '.tar';
+    }
 
-        system 'bzip2', $bz2_opt, "$archive.tar";
+    if ( !chdir $archive ) {
+        Carp::cluck "Unable to complete process. Unable to chdir to $archive: $!";
+        return;
     }
     if (@files) {
-        chdir $archive or return;
-        for my $file (@files) {
+        foreach my $file (@files) {
             system 'bzip2', $bz2_opt, $file if -f $file;
         }
         cPanel::SyncUtil::_sync_touchlock_pwd();
     }
     else {
-        chdir "$archive" or return;
         cPanel::SyncUtil::_sync_touchlock_pwd();
     }
 
-    chdir $pwd or return;
-
-    1;
-}
-
-sub _get_opts_hash {
-    require Getopt::Std;
-    my ( $args, $opts_ref ) = @_;
-
-    $opts_ref = {} if ref $opts_ref ne 'HASH';
-    Getopt::Std::getopts( $args, $opts_ref );
-
-    return wantarray ? %{$opts_ref} : $opts_ref;
+    if ( !chdir $pwd ) {
+        Carp::cluck "Failed to return back to directory $pwd: $!";
+        return;
+    }
+    return 1;
 }
 
 sub _sync_touchlock_pwd {
@@ -112,7 +161,7 @@ sub _sync_touchlock_pwd {
     require Cwd;
     my $cwd = Cwd::getcwd();
 
-    print "$0 [$> $< : $cwd] Building .cpanelsync file...";
+    print "$0 [$> $< : $cwd] Building .cpanelsync file...\n";
 
     my @files = split( /\n/, `find .` );
 
@@ -129,23 +178,24 @@ sub _sync_touchlock_pwd {
 
     open my $cpsw_fh, '>', '.cpanelsync' or die "$cwd/.cpanelsync write failed: $!";
 
-    FILE:
+  FILE:
     foreach my $file (@files) {
-        next FILE if $file =~ /===/
-                     || $file =~ /\.cpanelsync/
-                     || $file =~ /\.cpanelsync.lock/;
-
-        my $tfile;
+        if ( $file =~ /\/\.cpanelsync$/ || $file =~ /\/\.cpanelsync.lock$/ ) {
+            next FILE;
+        }
+        elsif ( $file =~ m/===/ ) {
+            Carp::cluck "improper file name detected: $file\n";
+            next FILE;
+        }
 
         if ( $file =~ /\.bz2$/ ) {
-            $tfile = $file;
+            my $tfile = $file;
             $tfile =~ s/\.bz2$//g;
             next FILE if -e $file && -e $tfile;
         }
 
         my $perms = substr( sprintf( '%o', ( stat($file) )[2] ), -3, 3 );
-
-        if ( $cwd =~ /\/bin$/ && ( $file eq './cpwrap' || $file eq './jailshell' ) ) {
+        if ( ( $file eq './cpwrap' || $file eq './jailshell' ) && $cwd =~ m/(?:^|\/)bin$/ ) {
             $perms = 4755;
         }
 
@@ -157,14 +207,22 @@ sub _sync_touchlock_pwd {
             print {$cpsw_fh} "d===$file===$perms\n";
         }
         else {
-            print "Warning: zero sized file $file.bz2\n" if -z "$file.bz2";
-
+            print "Warning: zero sized file $file\n" if -z $file;
+            my $mtime  = ( stat(_) )[9];
             my $md5sum = Digest::MD5::File::file_md5_hex($file);
-
-            system( 'bzip2', '-kfv', $file )
-                if (exists $oldmd5s{$file} && $md5sum ne $oldmd5s{$file})
-                   || !-e "$file.bz2"
-                   || -z "$file.bz2";
+            if ( exists $oldmd5s{$file} && $md5sum ne $oldmd5s{$file} ) {
+                unlink $file . '.bz2';
+                system( 'bzip2', '-kf', $file );
+            }
+            elsif ( -e $file . '.bz2' ) {
+                if ( $mtime > ( stat(_) )[9] ) {
+                    unlink $file . '.bz2';
+                    system( 'bzip2', '-kf', $file );
+                }
+            }
+            else {
+                system( 'bzip2', '-kf', $file );
+            }
             print {$cpsw_fh} "f===$file===$perms===$md5sum\n";
         }
     }
@@ -177,7 +235,212 @@ sub _sync_touchlock_pwd {
 
     system qw(touch .cpanelsync.lock);
 
-    return 1; # make more robust
+    return 1;    # make more robust
+}
+
+sub _get_opts_hash {
+    require Getopt::Std;
+    my ( $args, $opts_ref ) = @_;
+
+    $opts_ref = {} if ref $opts_ref ne 'HASH';
+    Getopt::Std::getopts( $args, $opts_ref );
+
+    return wantarray ? %{$opts_ref} : $opts_ref;
+}
+
+sub build_cpanelsync {
+    my ( $dir, $verbose ) = @_;
+    my $is_ok = 1;
+    if ( !$dir || !-d $dir ) {
+        Carp::croak "Invalid directory";
+    }
+
+    print "$0 [$> $< : $dir] Building .cpanelsync file...\n" if $verbose;
+
+    my $pwd = Cwd::getcwd();
+    if ( !chdir $dir ) {
+        Carp::croak "Unable to chdir to $dir: $!";
+    }
+
+    my @files = _read_dir_recursively('.');
+
+    my %oldmd5s;
+    if ( -e '.cpanelsync' ) {
+        open my $cps_fh, '<', '.cpanelsync' or Carp::croak "$dir/.cpanelsync read failed: $!";
+        while ( my $line = readline $cps_fh ) {
+            next if $line !~ m/^f/;
+            chomp $line;
+            my ( $ftype, $rfile, $perm, $extra ) = split( /===/, $line );
+            $oldmd5s{$rfile} = $extra;
+        }
+        close $cps_fh;
+    }
+
+    open my $cpsw_fh, '>', '.cpanelsync' or Carp::croak "$dir/.cpanelsync write failed: $!";
+
+  FILE:
+    foreach my $file (@files) {
+        next FILE if ( $file eq './.cpanelsync' || $file eq './.cpanelsync.lock' );
+
+        if ( $file =~ m/===/ ) {
+            Carp::cluck "Encountered improper file name: $file";
+            next FILE;
+        }
+
+        # Skip cpanelsync compressed files
+        elsif ( $file =~ m/\.bz2$/ ) {
+            my $tfile = $file;
+            $tfile =~ s/\.bz2$//g;
+            next FILE if -e $tfile;
+        }
+
+        my $perms = substr( sprintf( '%o', ( stat($file) )[2] ), -3, 3 );
+
+        # Special case for setuid binaries
+        if ( ( $file eq './cpwrap' || $file eq './jailshell' ) && $dir =~ m/(?:^|\/)bin$/ ) {
+            $perms = 4755;
+        }
+
+        if ( -l $file ) {
+            my $point = readlink($file);
+            print {$cpsw_fh} "l===$file===$perms===$point\n";
+        }
+        elsif ( -d $file ) {
+            print {$cpsw_fh} "d===$file===$perms\n" or Carp::croak "Unable write $dir/.cpanelsync: $!";
+        }
+        else {
+            print "Warning: zero sized file $file\n" if -z $file;
+            my $mtime  = ( stat(_) )[9];
+            my $md5sum = Digest::MD5::File::file_md5_hex($file);
+            if ( exists $oldmd5s{$file} && $md5sum ne $oldmd5s{$file} ) {    # unlink archive if file changed
+                unlink $file . '.bz2';
+            }
+            elsif ( -e $file . '.bz2' && $mtime > ( stat(_) )[9] ) {         # unlink archive if file is newer than archive
+                unlink $file . '.bz2';
+            }
+            print {$cpsw_fh} "f===$file===$perms===$md5sum\n" or Carp::croak "Unable write $dir/.cpanelsync: $!";
+        }
+    }
+    print {$cpsw_fh} ".\n" or Carp::croak "Unable write $dir/.cpanelsync: $!";
+    close $cpsw_fh or Carp::croak "Unable to properly save $dir/.cpanelsync: $!";
+
+    if ( open my $lock_fh, '>>', '.cpanelsync.lock' ) {
+        print {$lock_fh} '';
+        close $lock_fh;
+    }
+    else {
+        Carp::cluck "Unable to touch $dir/.cpanelsync.lock: $!";
+        $is_ok = 0;
+    }
+
+    if ( !chdir $pwd ) {
+        Carp::cluck "Failed to return to $pwd: $!";
+        $is_ok = 0;
+    }
+
+    print "Done\n" if $verbose;
+    return $is_ok;
+}
+
+sub compress_files {
+    my ( $dir, $verbose ) = @_;
+    if ( !$dir || !-d $dir ) {
+        Carp::croak "Invalid directory";
+    }
+
+    my $cpanelsync      = File::Spec->catfile( $dir, '.cpanelsync' );
+    my $cpanelsync_lock = File::Spec->catfile( $dir, '.cpanelsync.lock' );
+    if ( !-e $cpanelsync || -z _ || !-e $cpanelsync_lock ) {
+        build_cpanelsync( $dir, $verbose );
+    }
+
+    my $pwd = Cwd::cwd();
+
+    if ( !chdir $dir ) {
+        Carp::croak "Unable to chdir to directory $dir: $!";
+    }
+
+    my @to_bzip_files = get_files_from_cpanelsync('.cpanelsync');
+    foreach my $file (@to_bzip_files, '.cpanelsync') {
+        next if $file =~ m/\.bz2$/;
+        if ( -e $file . '.bz2' ) {
+            my $archive_mtime = ( stat(_) )[9];
+            if ( ( stat($file) )[9] > $archive_mtime ) {
+                unlink $file . '.bz2' or Carp::cluck "Unable to remove old archive $file.bz2: $!";
+            }
+            else {
+                next;    # Only update files if the archive mtime is less than the source
+            }
+        }
+        if ( !-e $file ) {
+            Carp::croak "Missing file $file";
+        }
+        bzip_file( $file, $verbose ) or Carp::croak "Failed to compress $file";
+    }
+
+    my $tar = Archive::Tar->new();
+    foreach my $file (@to_bzip_files) {
+        $tar->add_files($file);
+    }
+    if ( !chdir $pwd ) {
+        Carp::croak "Unable to chdir to directory $pwd: $!";
+    }
+    $tar->write( $dir . '.tar' );
+    bzip_file( $dir . '.tar', $verbose ) or Carp::croak "Failed to compress $dir.tar";
+    unlink $dir . '.tar';
+
+    return 1;
+}
+
+sub get_files_from_cpanelsync {
+    my $cpanelsync_file = shift;
+    if ( !$cpanelsync_file || !-e $cpanelsync_file ) {
+        if ( -e '.cpanelsync' ) {
+            $cpanelsync_file = '.cpanelsync';
+        }
+        else {
+            Carp::croak "Unable to locate cpanelsync file";
+        }
+    }
+    my @files;
+    if ( open my $cpanelsync_fh, '<', $cpanelsync_file ) {
+        while ( my $line = readline $cpanelsync_fh ) {
+            next if $line !~ m/^f/;
+            my ( $ftype, $rfile, $perm, $extra ) = split( /===/, $line );
+            push @files, $rfile;
+        }
+        close $cpanelsync_fh;
+    }
+    else {
+        Carp::croak "Unable to read $cpanelsync_file: $!";
+    }
+    return wantarray ? @files : \@files;
+}
+
+sub bzip_file {
+    my ( $file, $verbose ) = @_;
+    my $bz2_opt = $verbose ? '-fkv' : '-fk';
+    return if !-f $file;
+    if ( !$bzip ) {
+        _get_bzip_binary();
+    }
+    system $bzip, $bz2_opt, $file;
+    return if !-e $file . '.bz2';
+    return 1;
+}
+
+sub _get_bzip_binary {
+    return $bzip if $bzip;
+    foreach my $dir ( split( /:/, $ENV{'PATH'} ) ) {
+        if ( -x File::Spec->catfile( $dir, 'bzip2' ) ) {
+            $bzip = File::Spec->catfile( $dir, 'bzip2' );
+            last;
+        }
+    }
+    if ( !$bzip ) {
+        Carp::croak "Missing bzip2";
+    }
+    return $bzip;
 }
 
 1;
@@ -210,12 +473,40 @@ None by default, all functions are exportable if you wish:
 
 =head1 FUNCTIONS
 
+=head2 build_cpanelsync
+
+Builds the .cpanelsync database for the given directory. Arguments are a directory (required) and a boolean to turn on verbose output.
+
+=head2 compress_files
+
+Creates the compressed files for the given directory. Arguments are a directory (required) and a boolean to turn on verbose output.
+
+If no .cpanelsync database is located then build_cpanelsync will be called prior to compressing and files.
+
 =head2 _chown_pwd_recursively
 
 Takes as its first argument a user that matches ^\w+$ (and optionally a group as its second argument, also matching ^\w+$)
 and recursively chown's the current working directory to the given user (and group if given).
 
 Currently the return value is from a system() call to chown.
+
+=head2 get_files_from_cpanelsync
+
+Returns an array (array ref in scalar context) of files in a given cpanelsync file. If none is passed it uses the one in the current directory.
+
+=head2 bzip_file
+
+Creates the .bz2 version of the given file. A second boolean argument can be passed for verbosity. Returns true if it worked false otherwise.
+
+=head2 _read_dir_recursively
+
+Returns an array (array ref in scalar context ) of all files recursively in the given directory.
+
+=head2 _chown_recursively()
+
+Like _chown_pwd_recursively but takes a third argument of the path to process. 
+
+It can take 2 args : 'user, dir' or 3 args: 'user, group, dir'
 
 =head2 _safe_cpsync_dir
 
@@ -224,7 +515,6 @@ Returns true if the given argument is a directory that it is safe to be cpanelsy
 See the simple, scripts/cpanelsync_build_dir script for example useage while recursing directories.
 
 =head2 _raw_dir
-
 
 This function makes the .tar and .bz2 version of the file system.
 
@@ -247,9 +537,9 @@ Each item in @files must be a file (-f) in $base/$archive.
 If it returns false the error is in $!
 
     _raw_dir($base, $archive, $verbose, @files) 
-        or die "_raw_dir($base, $archive, $verbose, @files) failed: $!";
+        or Carp::croak "_raw_dir($base, $archive, $verbose, @files) failed: $!";
 
-Its very important to check the return value because if its failed its possible you will not be in the directory you think and then subsequent file operations will either fail or not work like you expect. Plus if its returned false then there is either a file system problem or the input to the function is not valid. In other words, if it fails you need to resolve the problem before continuing so die()ing is a good idea generally.
+Its very important to check the return value because if its failed its possible you will not be in the directory you think and then subsequent file operations will either fail or not work like you expect. Plus if its returned false then there is either a file system problem or the input to the function is not valid. In other words, if it fails you need to resolve the problem before continuing so croaking()ing is a good idea generally.
 
 _sync_touchlock_pwd is then run on $base/$archive so that its now a cpanelsync directory
 

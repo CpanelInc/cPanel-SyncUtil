@@ -5,6 +5,7 @@ WriteMakefile(
     VERSION_FROM      => 'lib/cPanel/SyncUtil.pm',
     PREREQ_PM         => {
         'File::Slurp'       => 0,
+        'File::Find'        => 0,
         'Digest::MD5::File' => 0,
         'version'           => 0,
         'Archive::Tar'      => 0,
