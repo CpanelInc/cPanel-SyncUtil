@@ -1,5 +1,10 @@
 Revision history for Perl extension cPanel::SyncUtil.
 
+0.4  Thu Aug  5 12:24:08 CDT 2010
+    - perltidy
+    - dropped 'use version'
+    - Added "Your webserver and cpanelsync aware directories" to POD
+    
 0.0.3  Thu Nov  8 09:07:00 2007
 	- added Ben Thomas' build_cpanelsync(), compress_files(), get_files_from_cpanelsync(), bzip_file(), _read_dir_recursively(),  _get_bzip_binary(), and _chown_recursively() functions/tests to help make it easier to work with
 	- created POD for those changes

@@ -10,24 +10,24 @@ use Digest::MD5::File ();
 use Cwd               ();
 use Archive::Tar      ();
 
-use version; our $VERSION = qv('0.0.3');
+our $VERSION = '0.4';
 
 require Exporter;
 our @ISA       = qw(Exporter);
 our @EXPORT_OK = qw(
-	build_cpanelsync
-	compress_files
-	_write_file
-	_read_dir
-	_read_dir_recursively
-	_lock
-	_unlock
-	_safe_cpsync_dir
-	_chown_pwd_recursively
-	_chown_recursively
-	_raw_dir
-	_sync_touchlock_pwd
-	_get_opts_hash
+  build_cpanelsync
+  compress_files
+  _write_file
+  _read_dir
+  _read_dir_recursively
+  _lock
+  _unlock
+  _safe_cpsync_dir
+  _chown_pwd_recursively
+  _chown_recursively
+  _raw_dir
+  _sync_touchlock_pwd
+  _get_opts_hash
 );
 
 our %EXPORT_TAGS = ( 'all' => \@EXPORT_OK );
@@ -82,22 +82,22 @@ sub _chown_pwd_recursively {
 
 sub _chown_recursively {
     my ( $user, $group, $dir );
-    
-    if( @_ == 3 ) {
-        ($user, $group, $dir) = @_;
+
+    if ( @_ == 3 ) {
+        ( $user, $group, $dir ) = @_;
     }
     elsif ( @_ == 2 ) {
-        ($user, $dir) = @_;
+        ( $user, $dir ) = @_;
     }
     else {
         Carp::croak('improper arguments');
     }
-    
+
     my $chown = defined $group ? "$user:$group" : $user;
     Carp::croak 'User [and group] must be ^\w+$' if $chown !~ m{^\w+(\:\w+)?$};
 
     Carp::croak "Invalid directory $dir" if !-d $dir;
-    
+
     system 'chown', '-R', $chown, $dir;
 }
 
@@ -361,7 +361,7 @@ sub compress_files {
     }
 
     my @to_bzip_files = get_files_from_cpanelsync('.cpanelsync');
-    foreach my $file (@to_bzip_files, '.cpanelsync') {
+    foreach my $file ( @to_bzip_files, '.cpanelsync' ) {
         next if $file =~ m/\.bz2$/;
         if ( -e $file . '.bz2' ) {
             my $archive_mtime = ( stat(_) )[9];
@@ -572,6 +572,30 @@ Locks the given directories.
 Unlocks the given directories.
 
     _unlock(qw(foo bar baz));
+
+=head1 Your webserver and cpanelsync aware directories
+
+Since a cpanelsycn directory is meant for downloading files you need to have the 
+webserver handle files in the given path differently than it normally does.
+
+For example typically you may have .cgi set up to so that it is executed and 
+it's output retuned to the user. If it in a cpanelsync directory then you want 
+users to download the source code of the .cgi file.
+
+Here is an example of one way to configure this behavior in Apache 2.0 and Apache 2.2:
+
+    <Directory /path/to/cpanelsync/dir>
+        # ForceType and Header are not strictly necessary but 
+        # may help ensure browsers can figure out what you want
+        ForceType application/octet-stream
+        Header set Content-Disposition attachment
+        DefaultType application/octet-stream
+        SetHandler default
+    </Directory>
+
+Note: You could also set the "filename" for the "attachment" by using rewrite 
+rules to set an environment variable and use that variable in the "Header set" 
+above. That is typically not necessary and beyond the scope of this document.
 
 =head1 SEE ALSO
 
