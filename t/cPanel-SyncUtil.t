@@ -4,12 +4,71 @@ use warnings;
 use File::Spec;
 use Cwd;
 
-use Test::More 'tests' => 30;
+use Test::More 'tests' => 32;
 BEGIN { use_ok('cPanel::SyncUtil', ':all') };
 
 print "\n";
 
 my $cwd = Cwd::getcwd();
+my $type_hr = {qw(
+    / d
+    /etc d
+    /etc/foo d 
+    /etc/bar d 
+    /etc/bar/diddly d
+    /etc/foo/cPanel d
+    /etc/foo/Cpanel d
+    /etc/foo/DDDDDD d
+    /etc/foo/AAAAAAA d
+    /etc/file f 
+    /etc/bar/wop f 
+    /etc/kibble/dog f 
+    /etc/link l
+    /etc/l l
+    /etc/abcdef l
+)};
+is_deeply(
+    [ cPanel::SyncUtil::__sort_test(1,keys %{$type_hr},$type_hr) ],
+    [qw(
+        /
+        /etc
+        /etc/bar
+        /etc/foo
+        /etc/bar/diddly
+        /etc/foo/cPanel
+        /etc/foo/Cpanel
+        /etc/foo/DDDDDD
+        /etc/foo/AAAAAAA
+        /etc/file
+        /etc/bar/wop
+        /etc/kibble/dog
+        /etc/l
+        /etc/link
+        /etc/abcdef
+    )],
+    'cpanelsync entries sorted properly'
+);
+is_deeply(
+    [ cPanel::SyncUtil::__sort_test(0,map { $type_hr->{$_} eq 'l' ? "$type_hr->{$_}===$_===/etc/shmetc/foo" : "$type_hr->{$_}===$_" } keys %{$type_hr}) ],
+    [qw(
+        d===/
+        d===/etc
+        d===/etc/bar
+        d===/etc/foo
+        d===/etc/bar/diddly
+        d===/etc/foo/cPanel
+        d===/etc/foo/Cpanel
+        d===/etc/foo/DDDDDD
+        d===/etc/foo/AAAAAAA
+        f===/etc/file
+        f===/etc/bar/wop
+        f===/etc/kibble/dog
+        l===/etc/l===/etc/shmetc/foo
+        l===/etc/link===/etc/shmetc/foo
+        l===/etc/abcdef===/etc/shmetc/foo
+    )],
+    'cpanelsync entries sorted properly'
+);
 
 # attempt to do tests in t/ directory
 my $upt = File::Spec->catdir( $cwd, 't');

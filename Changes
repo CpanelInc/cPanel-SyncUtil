@@ -1,5 +1,8 @@
 Revision history for Perl extension cPanel::SyncUtil.
 
+0.5  Thu Aug 12 19:27:35 CDT 2010
+    - sort cpanelsync file list
+
 0.4  Thu Aug  5 12:24:08 CDT 2010
     - perltidy
     - dropped 'use version'

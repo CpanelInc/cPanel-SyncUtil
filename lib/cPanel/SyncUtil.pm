@@ -10,7 +10,7 @@ use Digest::MD5::File ();
 use Cwd               ();
 use Archive::Tar      ();
 
-our $VERSION = '0.4';
+our $VERSION = '0.5';
 
 require Exporter;
 our @ISA       = qw(Exporter);
@@ -38,16 +38,58 @@ sub _write_file { goto &File::Slurp::write_file; }
 
 sub _read_dir { goto &File::Slurp::read_dir; }
 
+# my() not our() so that they can't be [easily] changed))
+# order by: type, then length, then case insensitive name
+# readdir could/will be slightly different than entry because entry 
+#    has varying meta data (mode, target, etc) so length and name are pidgy, 
+#    not critical for operation as the point of sort holds its integrity
+my $sort_cpanelsync_entries = sub { 
+    substr($a,0,1) cmp substr($b,0,1) || length($a) <=> length($b) || uc($a) cmp uc($b) 
+};
+my %type;
+my $sort_readdir = sub { 
+    $type{$a} ||= (-l $a ? 'l' : (-d $a ? 'd' : 'f'));
+    $type{$b} ||= (-l $b ? 'l' : (-d $b ? 'd' : 'f'));
+    $type{$a} cmp $type{$b} || length($a) <=> length($b) || uc($a) cmp uc($b) 
+};
+
+sub __sort_test {
+    my ($type, @args) = @_;
+    if ($type == 1) {
+        %type = ref($args[-1]) eq 'HASH' ? %{pop @args} : ();
+        return sort $sort_readdir @args;
+    }
+    else {
+        return sort $sort_cpanelsync_entries @args;
+    }
+}
+
 sub _read_dir_recursively {
     my $dir = shift;
     return if ( !$dir || !-d $dir );
     my @files;
     my $wanted = sub {
         return if $File::Find::name eq '.';
-        push @files, $File::Find::name;
+        
+        my $clean = $File::Find::name;
+        $clean =~ s/\/+$//; # so that -l and -d are not confused
+        
+        push @files, $clean;
+        
+        # if (-l $clean) {
+        #     push @links, $File::Find::name;
+        # }
+        # elsif(-d $clean) {
+        #     push @dirs, $File::Find::name;
+        # }
+        # else {
+        #     push @files, $clean;
+        # }
     };
     File::Find::find( { 'wanted' => $wanted, 'no_chdir' => 1, 'follow' => 0, }, $dir );
-    return wantarray ? @files : \@files;
+
+    # my @results = (sort $sort_readdir_notype @dirs), (sort $sort_readdir_notype @files), (sort $sort_readdir_notype @links);
+    return wantarray ? (sort $sort_readdir @files) : [sort $sort_readdir @files];
 }
 
 sub _lock {
@@ -501,6 +543,10 @@ Creates the .bz2 version of the given file. A second boolean argument can be pas
 =head2 _read_dir_recursively
 
 Returns an array (array ref in scalar context ) of all files recursively in the given directory.
+
+    @articles =  @files;
+
+The list is sorted by directories, files, then symlinks and those are each sorted case-insensitively
 
 =head2 _chown_recursively()
 
