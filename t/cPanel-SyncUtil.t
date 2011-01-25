@@ -4,7 +4,7 @@ use warnings;
 use File::Spec;
 use Cwd;
 
-use Test::More 'tests' => 32;
+use Test::More 'tests' => 37;
 BEGIN { use_ok('cPanel::SyncUtil', ':all') };
 
 print "\n";
@@ -181,9 +181,42 @@ chdir $upt or die "Failed to chdir $upt: $!";
 ok( @files = _read_dir_recursively( File::Spec->catfile($testdir2, 'compress_only') ), '_read_dir_recursively function call' );
 ok( @files == 6, "_read_dir_recursively results match expected count" );
 
+{
+    local $cPanel::SyncUtil::ignore_name{'filea'} = 1;
+    # _read_dir_recursively + %ignore_name
+    @files = ();
+    ok( @files = _read_dir_recursively( File::Spec->catfile($testdir2, 'compress_only') ), '_read_dir_recursively + \%ignore_name function call w/ file name' );
+    ok( @files == 5, "_read_dir_recursively + \%ignore_name results match expected count w/ file name" );
+}
+
+{
+    local $cPanel::SyncUtil::ignore_name{"$testdir2/compress_only/filea"} = 1;
+    # _read_dir_recursively + %ignore_name
+    @files = ();
+    ok( @files = _read_dir_recursively( File::Spec->catfile($testdir2, 'compress_only') ), '_read_dir_recursively + \%ignore_name function call w/ file path' );
+    ok( @files == 5, "_read_dir_recursively + \%ignore_name results match expected count w/ file path" );
+}
+    
 # build_cpanelsync
-diag('Running build_cpanelsync()');
-ok( build_cpanelsync( File::Spec->catfile($testdir2, 'build_cpanelsync') ), 'build_cpanelsync function call' );
+
+{
+    my $is_setuid_called = 0;
+    local $cPanel::SyncUtil::is_setuid = sub {
+        $is_setuid_called++;
+        return if $is_setuid_called > 1;
+        is($_[0],'./dira', 'is_setuid() called when expected and given the correct data');
+        return;
+    };
+
+    diag('Running build_cpanelsync()');
+    ok( build_cpanelsync( File::Spec->catfile($testdir2, 'build_cpanelsync') ), 'build_cpanelsync function call' );
+
+    if (!$is_setuid_called) {
+        ok(0,'is_setuid() called when expected')   
+    }
+    $cPanel::SyncUtil::is_setuid = sub { return }; # use it twice to get rid of warning
+}
+
 for(qw( .cpanelsync .cpanelsync.lock )) {
     my $file = File::Spec->catfile($testdir2, 'build_cpanelsync', $_);
     ok( -e $file, "build_cpanelsync file exists: $file" );

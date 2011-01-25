@@ -10,7 +10,12 @@ use Digest::MD5::File ();
 use Cwd               ();
 use Archive::Tar      ();
 
-our $VERSION = '0.5';
+our $VERSION = '0.6';
+
+our %ignore_name = (
+    '.git' => 1,
+    '.svn' => 1,
+);
 
 require Exporter;
 our @ISA       = qw(Exporter);
@@ -33,6 +38,7 @@ our @EXPORT_OK = qw(
 our %EXPORT_TAGS = ( 'all' => \@EXPORT_OK );
 
 our $bzip;
+our $is_setuid = sub { return; };
 
 sub _write_file { goto &File::Slurp::write_file; }
 
@@ -69,7 +75,8 @@ sub _read_dir_recursively {
     return if ( !$dir || !-d $dir );
     my @files;
     my $wanted = sub {
-        return if $File::Find::name eq '.';
+        my ($filename) = reverse( File::Spec->splitpath($File::Find::name) );
+        return if $File::Find::name eq '.' || exists $ignore_name{$File::Find::name} || exists $ignore_name{$filename};
         
         my $clean = $File::Find::name;
         $clean =~ s/\/+$//; # so that -l and -d are not confused
@@ -185,10 +192,10 @@ sub _raw_dir {
         foreach my $file (@files) {
             system 'bzip2', $bz2_opt, $file if -f $file;
         }
-        cPanel::SyncUtil::_sync_touchlock_pwd();
+        cPanel::SyncUtil::_sync_touchlock_pwd($verbose);
     }
     else {
-        cPanel::SyncUtil::_sync_touchlock_pwd();
+        cPanel::SyncUtil::_sync_touchlock_pwd($verbose);
     }
 
     if ( !chdir $pwd ) {
@@ -199,6 +206,7 @@ sub _raw_dir {
 }
 
 sub _sync_touchlock_pwd {
+    my $verbose = $_[0];
     $|++;
     require Cwd;
     my $cwd = Cwd::getcwd();
@@ -235,9 +243,10 @@ sub _sync_touchlock_pwd {
             $tfile =~ s/\.bz2$//g;
             next FILE if -e $file && -e $tfile;
         }
-
-        my $perms = substr( sprintf( '%o', ( stat($file) )[2] ), -3, 3 );
-        if ( ( $file eq './cpwrap' || $file eq './jailshell' ) && $cwd =~ m/(?:^|\/)bin$/ ) {
+        
+        # stat() on non existent file or broken symlink will make sprintf() warn "Missing argument in sprintf at ..."
+        my $perms = stat($file) ? substr( sprintf( '%o', ( stat(_) )[2] ), -3, 3 ) : 0;
+        if ( (( $file eq './cpwrap' || $file eq './jailshell' ) && $cwd =~ m/(?:^|\/)bin$/) || $is_setuid->($file) ) {
             $perms = 4755;
         }
 
@@ -249,7 +258,7 @@ sub _sync_touchlock_pwd {
             print {$cpsw_fh} "d===$file===$perms\n";
         }
         else {
-            print "Warning: zero sized file $file\n" if -z $file;
+            print "Warning: zero sized file $file\n" if -z $file && $verbose;
             my $mtime  = ( stat(_) )[9];
             my $md5sum = Digest::MD5::File::file_md5_hex($file);
             if ( exists $oldmd5s{$file} && $md5sum ne $oldmd5s{$file} ) {
@@ -336,10 +345,10 @@ sub build_cpanelsync {
             next FILE if -e $tfile;
         }
 
-        my $perms = substr( sprintf( '%o', ( stat($file) )[2] ), -3, 3 );
-
+        # stat() on non existent file or broken symlink will make sprintf() warn "Missing argument in sprintf at ..."
+        my $perms = stat($file) ? substr( sprintf( '%o', ( stat(_) )[2] ), -3, 3 ) : 0;
         # Special case for setuid binaries
-        if ( ( $file eq './cpwrap' || $file eq './jailshell' ) && $dir =~ m/(?:^|\/)bin$/ ) {
+        if ( (( $file eq './cpwrap' || $file eq './jailshell' ) && $dir =~ m/(?:^|\/)bin$/) || $is_setuid->($file) ) {
             $perms = 4755;
         }
 
@@ -351,7 +360,7 @@ sub build_cpanelsync {
             print {$cpsw_fh} "d===$file===$perms\n" or Carp::croak "Unable write $dir/.cpanelsync: $!";
         }
         else {
-            print "Warning: zero sized file $file\n" if -z $file;
+            print "Warning: zero sized file $file\n" if -z $file && $verbose;
             my $mtime  = ( stat(_) )[9];
             my $md5sum = Digest::MD5::File::file_md5_hex($file);
             if ( exists $oldmd5s{$file} && $md5sum ne $oldmd5s{$file} ) {    # unlink archive if file changed
@@ -519,6 +528,12 @@ None by default, all functions are exportable if you wish:
 
 Builds the .cpanelsync database for the given directory. Arguments are a directory (required) and a boolean to turn on verbose output.
 
+If you have binaries that need to be setuid you can define $Cpanel::SyncUtil::is_setuid as a coderef that takes the path of a file relative to the path being operated on and returns true if the mode should be 4755, false otherwise.
+
+"path of a file relative to the path being operated on" is a little confusing so here is an example:
+
+If you pass "foo/bar/baz" to build_cpanelsync() and "foo/bar/baz" contains "pow" and "wop/zing" then $Cpanel::SyncUtil::is_setuid gets called twice: once with "./pow" and once with "./wop/zong".
+
 =head2 compress_files
 
 Creates the compressed files for the given directory. Arguments are a directory (required) and a boolean to turn on verbose output.
@@ -547,6 +562,10 @@ Returns an array (array ref in scalar context ) of all files recursively in the 
     @articles =  @files;
 
 The list is sorted by directories, files, then symlinks and those are each sorted case-insensitively
+
+You can add file names to ignore as keys in %Cpanel::SyncUtil::ignore_name which has by default '.svn' and '.git'.
+
+The name can be the file name only or the path (that will start w/ the path given to _read_dir_recursively()).
 
 =head2 _chown_recursively()
 

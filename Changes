@@ -1,5 +1,11 @@
 Revision history for Perl extension cPanel::SyncUtil.
 
+0.6  Tue Jan 25 10:41:00 2011
+    - add %Cpanel::SyncUtil::ignore_name containing default .svn and .git values
+    - make zero length file waning respect verbose setting
+    - prevent "Missing argument in sprintf at ..." warnings from being triggered
+    - Added $Cpanel::SyncUtil::is_setuid coderef to enable specifying that known setuid binaries
+
 0.5  Thu Aug 12 19:27:35 CDT 2010
     - sort cpanelsync file list
 
