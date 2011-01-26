@@ -1,5 +1,10 @@
 Revision history for Perl extension cPanel::SyncUtil.
 
+0.7  Wed Jan 26 07:34:41 2011
+    - set $File::Find::prune when %ignore_name is triggered (thanks TODDR)
+    - Drop $Cpanel::SyncUtil::is_setuid in favor of more sane "get_mode_string" function/argument
+    - Added get_mode_string() and get_mode_string_preserve_setuid()
+
 0.6  Tue Jan 25 10:41:00 2011
     - add %Cpanel::SyncUtil::ignore_name containing default .svn and .git values
     - make zero length file waning respect verbose setting

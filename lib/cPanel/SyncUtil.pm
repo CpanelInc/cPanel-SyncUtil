@@ -10,7 +10,7 @@ use Digest::MD5::File ();
 use Cwd               ();
 use Archive::Tar      ();
 
-our $VERSION = '0.6';
+our $VERSION = '0.7';
 
 our %ignore_name = (
     '.git' => 1,
@@ -21,6 +21,8 @@ require Exporter;
 our @ISA       = qw(Exporter);
 our @EXPORT_OK = qw(
   build_cpanelsync
+  get_mode_string
+  get_mode_string_preserve_setuid
   compress_files
   _write_file
   _read_dir
@@ -38,7 +40,27 @@ our @EXPORT_OK = qw(
 our %EXPORT_TAGS = ( 'all' => \@EXPORT_OK );
 
 our $bzip;
-our $is_setuid = sub { return; };
+
+sub get_mode_string {
+    my ($file) = @_;
+    
+    my $perms = (stat($file))[2] || 0;
+    $perms    = $perms & 0777;
+    return sprintf('%o', $perms); # Stringify the octal.  
+}
+
+sub get_mode_string_preserve_setuid {
+    my ($file) = @_;
+    
+    my $perms = (stat($file))[2] || 0;
+    if (!-l _) {
+        $perms = $perms & 04777;
+    }
+    else {
+        $perms = $perms & 0777;
+    }
+    return sprintf('%o', $perms); # Stringify the octal.  
+}
 
 sub _write_file { goto &File::Slurp::write_file; }
 
@@ -75,8 +97,13 @@ sub _read_dir_recursively {
     return if ( !$dir || !-d $dir );
     my @files;
     my $wanted = sub {
+        return if $File::Find::name eq '.';
+        
         my ($filename) = reverse( File::Spec->splitpath($File::Find::name) );
-        return if $File::Find::name eq '.' || exists $ignore_name{$File::Find::name} || exists $ignore_name{$filename};
+        if (exists $ignore_name{$File::Find::name} || exists $ignore_name{$filename}) {
+            $File::Find::prune = 1;
+            return;
+        }
         
         my $clean = $File::Find::name;
         $clean =~ s/\/+$//; # so that -l and -d are not confused
@@ -152,7 +179,9 @@ sub _chown_recursively {
 
 sub _raw_dir {
     my ( $base, $archive, $verbose, @files ) = @_;
-    my $bz2_opt = $verbose ? '-fkv' : '-fk';
+    my $args_hr = ref($verbose) ? $verbose : { 'verbose' => $verbose };
+    
+    my $bz2_opt = $args_hr->{'verbose'} ? '-fkv' : '-fk';
     my $pwd = Cwd::cwd();
     if ( !-d $base ) {
         Carp::cluck "Invalid base directory $base";
@@ -192,10 +221,10 @@ sub _raw_dir {
         foreach my $file (@files) {
             system 'bzip2', $bz2_opt, $file if -f $file;
         }
-        cPanel::SyncUtil::_sync_touchlock_pwd($verbose);
+        cPanel::SyncUtil::_sync_touchlock_pwd($args_hr);
     }
     else {
-        cPanel::SyncUtil::_sync_touchlock_pwd($verbose);
+        cPanel::SyncUtil::_sync_touchlock_pwd($args_hr);
     }
 
     if ( !chdir $pwd ) {
@@ -207,6 +236,8 @@ sub _raw_dir {
 
 sub _sync_touchlock_pwd {
     my $verbose = $_[0];
+    my $args_hr = ref($verbose) ? $verbose : { 'verbose' => $verbose };
+    
     $|++;
     require Cwd;
     my $cwd = Cwd::getcwd();
@@ -244,11 +275,7 @@ sub _sync_touchlock_pwd {
             next FILE if -e $file && -e $tfile;
         }
         
-        # stat() on non existent file or broken symlink will make sprintf() warn "Missing argument in sprintf at ..."
-        my $perms = stat($file) ? substr( sprintf( '%o', ( stat(_) )[2] ), -3, 3 ) : 0;
-        if ( (( $file eq './cpwrap' || $file eq './jailshell' ) && $cwd =~ m/(?:^|\/)bin$/) || $is_setuid->($file) ) {
-            $perms = 4755;
-        }
+        my $perms = ref( $args_hr->{'get_mode_string'} ) eq 'CODE' ? ($args_hr->{'get_mode_string'}->($file) || 0) : get_mode_string($file);
 
         if ( -l $file ) {
             my $point = readlink($file);
@@ -258,7 +285,7 @@ sub _sync_touchlock_pwd {
             print {$cpsw_fh} "d===$file===$perms\n";
         }
         else {
-            print "Warning: zero sized file $file\n" if -z $file && $verbose;
+            print "Warning: zero sized file $file\n" if -z $file && $args_hr->{'verbose'};
             my $mtime  = ( stat(_) )[9];
             my $md5sum = Digest::MD5::File::file_md5_hex($file);
             if ( exists $oldmd5s{$file} && $md5sum ne $oldmd5s{$file} ) {
@@ -301,12 +328,14 @@ sub _get_opts_hash {
 
 sub build_cpanelsync {
     my ( $dir, $verbose ) = @_;
+    my $args_hr = ref($verbose) ? $verbose : { 'verbose' => $verbose };
+    
     my $is_ok = 1;
     if ( !$dir || !-d $dir ) {
         Carp::croak "Invalid directory";
     }
 
-    print "$0 [$> $< : $dir] Building .cpanelsync file...\n" if $verbose;
+    print "$0 [$> $< : $dir] Building .cpanelsync file...\n" if $args_hr->{'verbose'};
 
     my $pwd = Cwd::getcwd();
     if ( !chdir $dir ) {
@@ -345,12 +374,7 @@ sub build_cpanelsync {
             next FILE if -e $tfile;
         }
 
-        # stat() on non existent file or broken symlink will make sprintf() warn "Missing argument in sprintf at ..."
-        my $perms = stat($file) ? substr( sprintf( '%o', ( stat(_) )[2] ), -3, 3 ) : 0;
-        # Special case for setuid binaries
-        if ( (( $file eq './cpwrap' || $file eq './jailshell' ) && $dir =~ m/(?:^|\/)bin$/) || $is_setuid->($file) ) {
-            $perms = 4755;
-        }
+        my $perms = ref( $args_hr->{'get_mode_string'} ) eq 'CODE' ? ($args_hr->{'get_mode_string'}->($file) || 0) : get_mode_string($file);
 
         if ( -l $file ) {
             my $point = readlink($file);
@@ -360,7 +384,7 @@ sub build_cpanelsync {
             print {$cpsw_fh} "d===$file===$perms\n" or Carp::croak "Unable write $dir/.cpanelsync: $!";
         }
         else {
-            print "Warning: zero sized file $file\n" if -z $file && $verbose;
+            print "Warning: zero sized file $file\n" if -z $file && $args_hr->{'verbose'};
             my $mtime  = ( stat(_) )[9];
             my $md5sum = Digest::MD5::File::file_md5_hex($file);
             if ( exists $oldmd5s{$file} && $md5sum ne $oldmd5s{$file} ) {    # unlink archive if file changed
@@ -389,7 +413,7 @@ sub build_cpanelsync {
         $is_ok = 0;
     }
 
-    print "Done\n" if $verbose;
+    print "Done\n" if $args_hr->{'verbose'};
     return $is_ok;
 }
 
@@ -528,11 +552,23 @@ None by default, all functions are exportable if you wish:
 
 Builds the .cpanelsync database for the given directory. Arguments are a directory (required) and a boolean to turn on verbose output.
 
-If you have binaries that need to be setuid you can define $Cpanel::SyncUtil::is_setuid as a coderef that takes the path of a file relative to the path being operated on and returns true if the mode should be 4755, false otherwise.
+The second argument can also be a hashref with the following keys:
 
-"path of a file relative to the path being operated on" is a little confusing so here is an example:
+=over 4
 
-If you pass "foo/bar/baz" to build_cpanelsync() and "foo/bar/baz" contains "pow" and "wop/zing" then $Cpanel::SyncUtil::is_setuid gets called twice: once with "./pow" and once with "./wop/zong".
+=item 'verbose'
+
+The value is a boolean to turn on verbose output.
+
+=item 'get_mode_string'
+
+The value can be a coderef that takes the path you are interested in and returns a stringified mode value.
+
+It defaults to cPanel::SycnUtil::get_mode_string() which does not preserve setuid for security.
+
+If you have binaries that need to be setuid you can use \&cPanel::SycnUtil::get_mode_string_preserve_setuid or roll your own instead (e.g. to only preserve setuid on specific ones and warn about files that are setuid that need review).
+
+=back
 
 =head2 compress_files
 
@@ -555,6 +591,18 @@ Returns an array (array ref in scalar context) of files in a given cpanelsync fi
 
 Creates the .bz2 version of the given file. A second boolean argument can be passed for verbosity. Returns true if it worked false otherwise.
 
+=head2 get_mode_string
+
+Takes a path and returns a string suitable the .cpanelsync format and oct().
+
+For security, it does not retain setuid and is the default "mode determining" function. Alternate "mode determining" funcionality can be had as documented in functions where it is applicable.
+
+=head2 get_mode_string_preserve_setuid
+
+Takes a path and returns a string suitable the .cpanelsync format and oct().
+
+This will retain setuid unless the given file is a symlink.
+
 =head2 _read_dir_recursively
 
 Returns an array (array ref in scalar context ) of all files recursively in the given directory.
@@ -563,7 +611,7 @@ Returns an array (array ref in scalar context ) of all files recursively in the 
 
 The list is sorted by directories, files, then symlinks and those are each sorted case-insensitively
 
-You can add file names to ignore as keys in %Cpanel::SyncUtil::ignore_name which has by default '.svn' and '.git'.
+You can add file names to ignore as keys in %cPanel::SyncUtil::ignore_name which has by default '.svn' and '.git'.
 
 The name can be the file name only or the path (that will start w/ the path given to _read_dir_recursively()).
 
@@ -595,6 +643,24 @@ It will chdir in $base and the process the directory $archive
 
 If $verbose is true, output will be verbose.
 
+$verbose can also be a hashref with the following keys:
+
+=over 4
+
+=item 'verbose'
+
+The value is a boolean to turn on verbose output.
+
+=item 'get_mode_string'
+
+The value can be a coderef that takes the path you are interested in and returns a stringified mode value.
+
+It defaults to cPanel::SycnUtil::get_mode_string() which does not preserve setuid for security.
+
+If you have binaries that need to be setuid you can use \&cPanel::SycnUtil::get_mode_string_preserve_setuid or roll your own instead (e.g. to only preserve setuid on specific ones and warn about files that are setuid that need review).
+
+=back
+
 If @files is specified each item in it is also processed.
 
 Each item in @files must be a file (-f) in $base/$archive.
@@ -617,6 +683,24 @@ Takes the same exact input as L<Getopt::Std> getopts()
 =head2 _sync_touchlock_pwd
 
 Creates the .cpanelsync file (and its .bz2 version) and .cpanelsync.lock for the current working directory
+
+The argument can be a boolean to turn on verbose output or a hashref with the following keys:
+
+=over 4
+
+=item 'verbose'
+
+The value is a boolean to turn on verbose output.
+
+=item 'get_mode_string'
+
+The value can be a coderef that takes the path you are interested in and returns a stringified mode value.
+
+It defaults to cPanel::SycnUtil::get_mode_string() which does not preserve setuid for security.
+
+If you have binaries that need to be setuid you can use \&cPanel::SycnUtil::get_mode_string_preserve_setuid or roll your own instead (e.g. to only preserve setuid on specific ones and warn about files that are setuid that need review).
+
+=back
 
 =head2 _read_dir
 

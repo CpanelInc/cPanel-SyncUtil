@@ -200,21 +200,21 @@ ok( @files == 6, "_read_dir_recursively results match expected count" );
 # build_cpanelsync
 
 {
-    my $is_setuid_called = 0;
-    local $cPanel::SyncUtil::is_setuid = sub {
-        $is_setuid_called++;
-        return if $is_setuid_called > 1;
-        is($_[0],'./dira', 'is_setuid() called when expected and given the correct data');
-        return;
+    my $test_mode_called = 0;
+    my $test_get_mode_string = sub {
+        my ($file) = @_;
+        $test_mode_called++;
+        return get_mode_string($file) if $test_mode_called > 1;
+        is($file,'./dira', 'get_mode_string() called when expected and given the correct data');
+        return get_mode_string($file)
     };
 
     diag('Running build_cpanelsync()');
-    ok( build_cpanelsync( File::Spec->catfile($testdir2, 'build_cpanelsync') ), 'build_cpanelsync function call' );
+    ok( build_cpanelsync( File::Spec->catfile($testdir2, 'build_cpanelsync'), { 'get_mode_string' => $test_get_mode_string } ), 'build_cpanelsync function call' );
 
-    if (!$is_setuid_called) {
-        ok(0,'is_setuid() called when expected')   
+    if (!$test_mode_called) {
+        ok(0,'get_mode_string() called when expected')   
     }
-    $cPanel::SyncUtil::is_setuid = sub { return }; # use it twice to get rid of warning
 }
 
 for(qw( .cpanelsync .cpanelsync.lock )) {
