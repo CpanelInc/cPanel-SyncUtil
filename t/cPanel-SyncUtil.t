@@ -35,8 +35,8 @@ is_deeply(
         /etc/bar
         /etc/foo
         /etc/bar/diddly
-        /etc/foo/cPanel
         /etc/foo/Cpanel
+        /etc/foo/cPanel
         /etc/foo/DDDDDD
         /etc/foo/AAAAAAA
         /etc/file
@@ -56,8 +56,8 @@ is_deeply(
         d===/etc/bar
         d===/etc/foo
         d===/etc/bar/diddly
-        d===/etc/foo/cPanel
         d===/etc/foo/Cpanel
+        d===/etc/foo/cPanel
         d===/etc/foo/DDDDDD
         d===/etc/foo/AAAAAAA
         f===/etc/file
