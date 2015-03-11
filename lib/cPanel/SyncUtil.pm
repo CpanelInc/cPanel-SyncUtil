@@ -7,6 +7,7 @@ use File::Spec        ();
 use File::Slurp       ();
 use File::Find        ();
 use Digest::MD5::File ();
+use Digest::SHA       ();
 use Cwd               ();
 use Archive::Tar      ();
 
@@ -288,6 +289,9 @@ sub _sync_touchlock_pwd {
             print "Warning: zero sized file $file\n" if -z $file && $args_hr->{'verbose'};
             my $mtime  = ( stat(_) )[9];
             my $md5sum = Digest::MD5::File::file_md5_hex($file);
+            my $sha    = Digest::SHA->new('512');
+            $sha->addfile($file);
+            my $sha512 = $sha->hexdigest;
             if ( exists $oldmd5s{$file} && $md5sum ne $oldmd5s{$file} ) {
                 unlink $file . '.bz2';
                 system( 'bzip2', '-kf', $file );
@@ -301,7 +305,7 @@ sub _sync_touchlock_pwd {
             else {
                 system( 'bzip2', '-kf', $file );
             }
-            print {$cpsw_fh} "f===$file===$perms===$md5sum\n";
+            print {$cpsw_fh} "f===$file===$perms===$md5sum===$sha512\n";
         }
     }
     print {$cpsw_fh} ".\n";
@@ -387,13 +391,16 @@ sub build_cpanelsync {
             print "Warning: zero sized file $file\n" if -z $file && $args_hr->{'verbose'};
             my $mtime  = ( stat(_) )[9];
             my $md5sum = Digest::MD5::File::file_md5_hex($file);
+            my $sha    = Digest::SHA->new('512');
+            $sha->addfile($file);
+            my $sha512 = $sha->hexdigest;
             if ( exists $oldmd5s{$file} && $md5sum ne $oldmd5s{$file} ) {    # unlink archive if file changed
                 unlink $file . '.bz2';
             }
             elsif ( -e $file . '.bz2' && $mtime > ( stat(_) )[9] ) {         # unlink archive if file is newer than archive
                 unlink $file . '.bz2';
             }
-            print {$cpsw_fh} "f===$file===$perms===$md5sum\n" or Carp::croak "Unable write $dir/.cpanelsync: $!";
+            print {$cpsw_fh} "f===$file===$perms===$md5sum===$sha512\n" or Carp::croak "Unable write $dir/.cpanelsync: $!";
         }
     }
     print {$cpsw_fh} ".\n" or Carp::croak "Unable write $dir/.cpanelsync: $!";

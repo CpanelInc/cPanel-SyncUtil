@@ -9,6 +9,7 @@ WriteMakefile(
         'File::Slurp'       => 0,
         'File::Find'        => 0,
         'Digest::MD5::File' => 0,
+        'Digest::SHA'       => 0,
         'Archive::Tar'      => 0,
         'Getopt::Std'       => 0,
     },
