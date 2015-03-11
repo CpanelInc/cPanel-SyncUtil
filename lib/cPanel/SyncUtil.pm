@@ -10,7 +10,7 @@ use Digest::MD5::File ();
 use Cwd               ();
 use Archive::Tar      ();
 
-our $VERSION = '0.7';
+our $VERSION = '0.8';
 
 our %ignore_name = (
     '.git' => 1,
