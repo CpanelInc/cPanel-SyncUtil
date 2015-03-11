@@ -73,13 +73,13 @@ sub _read_dir { goto &File::Slurp::read_dir; }
 #    has varying meta data (mode, target, etc) so length and name are pidgy, 
 #    not critical for operation as the point of sort holds its integrity
 my $sort_cpanelsync_entries = sub { 
-    substr($a,0,1) cmp substr($b,0,1) || length($a) <=> length($b) || uc($a) cmp uc($b) 
+    substr($a,0,1) cmp substr($b,0,1) || length($a) <=> length($b) || uc($a) cmp uc($b) || $a cmp $b
 };
 my %type;
 my $sort_readdir = sub { 
     $type{$a} ||= (-l $a ? 'l' : (-d $a ? 'd' : 'f'));
     $type{$b} ||= (-l $b ? 'l' : (-d $b ? 'd' : 'f'));
-    $type{$a} cmp $type{$b} || length($a) <=> length($b) || uc($a) cmp uc($b) 
+    $type{$a} cmp $type{$b} || length($a) <=> length($b) || uc($a) cmp uc($b) || $a cmp $b
 };
 
 sub __sort_test {
