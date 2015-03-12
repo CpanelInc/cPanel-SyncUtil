@@ -44,23 +44,23 @@ our $bzip;
 
 sub get_mode_string {
     my ($file) = @_;
-    
-    my $perms = (stat($file))[2] || 0;
-    $perms    = $perms & 0777;
-    return sprintf('%o', $perms); # Stringify the octal.  
+
+    my $perms = ( stat($file) )[2] || 0;
+    $perms = $perms & 0777;
+    return sprintf( '%o', $perms );    # Stringify the octal.
 }
 
 sub get_mode_string_preserve_setuid {
     my ($file) = @_;
-    
-    my $perms = (stat($file))[2] || 0;
-    if (!-l _) {
+
+    my $perms = ( stat($file) )[2] || 0;
+    if ( !-l _ ) {
         $perms = $perms & 04777;
     }
     else {
         $perms = $perms & 0777;
     }
-    return sprintf('%o', $perms); # Stringify the octal.  
+    return sprintf( '%o', $perms );    # Stringify the octal.
 }
 
 sub _write_file { goto &File::Slurp::write_file; }
@@ -69,23 +69,23 @@ sub _read_dir { goto &File::Slurp::read_dir; }
 
 # my() not our() so that they can't be [easily] changed))
 # order by: type, then length, then case insensitive name
-# readdir could/will be slightly different than entry because entry 
-#    has varying meta data (mode, target, etc) so length and name are pidgy, 
+# readdir could/will be slightly different than entry because entry
+#    has varying meta data (mode, target, etc) so length and name are pidgy,
 #    not critical for operation as the point of sort holds its integrity
-my $sort_cpanelsync_entries = sub { 
-    substr($a,0,1) cmp substr($b,0,1) || length($a) <=> length($b) || uc($a) cmp uc($b) || $a cmp $b
+my $sort_cpanelsync_entries = sub {
+    substr( $a, 0, 1 ) cmp substr( $b, 0, 1 ) || length($a) <=> length($b) || uc($a) cmp uc($b) || $a cmp $b;
 };
 my %type;
-my $sort_readdir = sub { 
-    $type{$a} ||= (-l $a ? 'l' : (-d $a ? 'd' : 'f'));
-    $type{$b} ||= (-l $b ? 'l' : (-d $b ? 'd' : 'f'));
-    $type{$a} cmp $type{$b} || length($a) <=> length($b) || uc($a) cmp uc($b) || $a cmp $b
+my $sort_readdir = sub {
+    $type{$a} ||= ( -l $a ? 'l' : ( -d $a ? 'd' : 'f' ) );
+    $type{$b} ||= ( -l $b ? 'l' : ( -d $b ? 'd' : 'f' ) );
+    $type{$a} cmp $type{$b} || length($a) <=> length($b) || uc($a) cmp uc($b) || $a cmp $b;
 };
 
 sub __sort_test {
-    my ($type, @args) = @_;
-    if ($type == 1) {
-        %type = ref($args[-1]) eq 'HASH' ? %{pop @args} : ();
+    my ( $type, @args ) = @_;
+    if ( $type == 1 ) {
+        %type = ref( $args[-1] ) eq 'HASH' ? %{ pop @args } : ();
         return sort $sort_readdir @args;
     }
     else {
@@ -99,18 +99,18 @@ sub _read_dir_recursively {
     my @files;
     my $wanted = sub {
         return if $File::Find::name eq '.';
-        
+
         my ($filename) = reverse( File::Spec->splitpath($File::Find::name) );
-        if (exists $ignore_name{$File::Find::name} || exists $ignore_name{$filename}) {
+        if ( exists $ignore_name{$File::Find::name} || exists $ignore_name{$filename} ) {
             $File::Find::prune = 1;
             return;
         }
-        
+
         my $clean = $File::Find::name;
-        $clean =~ s/\/+$//; # so that -l and -d are not confused
-        
+        $clean =~ s/\/+$//;    # so that -l and -d are not confused
+
         push @files, $clean;
-        
+
         # if (-l $clean) {
         #     push @links, $File::Find::name;
         # }
@@ -124,7 +124,7 @@ sub _read_dir_recursively {
     File::Find::find( { 'wanted' => $wanted, 'no_chdir' => 1, 'follow' => 0, }, $dir );
 
     # my @results = (sort $sort_readdir_notype @dirs), (sort $sort_readdir_notype @files), (sort $sort_readdir_notype @links);
-    return wantarray ? (sort $sort_readdir @files) : [sort $sort_readdir @files];
+    return wantarray ? ( sort $sort_readdir @files ) : [ sort $sort_readdir @files ];
 }
 
 sub _lock {
@@ -145,10 +145,10 @@ sub _safe_cpsync_dir {
     my $dir = shift;
     return 1
       if defined $dir
-          && $dir !~ m/\.bak$/
-          && $dir !~ m/^\./
-          && -d $dir
-          && !-l $dir;
+      && $dir !~ m/\.bak$/
+      && $dir !~ m/^\./
+      && -d $dir
+      && !-l $dir;
     return 0;
 }
 
@@ -181,7 +181,7 @@ sub _chown_recursively {
 sub _raw_dir {
     my ( $base, $archive, $verbose, @files ) = @_;
     my $args_hr = ref($verbose) ? $verbose : { 'verbose' => $verbose };
-    
+
     my $bz2_opt = $args_hr->{'verbose'} ? '-fkv' : '-fk';
     my $pwd = Cwd::cwd();
     if ( !-d $base ) {
@@ -238,7 +238,7 @@ sub _raw_dir {
 sub _sync_touchlock_pwd {
     my $verbose = $_[0];
     my $args_hr = ref($verbose) ? $verbose : { 'verbose' => $verbose };
-    
+
     $|++;
     require Cwd;
     my $cwd = Cwd::getcwd();
@@ -275,8 +275,8 @@ sub _sync_touchlock_pwd {
             $tfile =~ s/\.bz2$//g;
             next FILE if -e $file && -e $tfile;
         }
-        
-        my $perms = ref( $args_hr->{'get_mode_string'} ) eq 'CODE' ? ($args_hr->{'get_mode_string'}->($file) || 0) : get_mode_string($file);
+
+        my $perms = ref( $args_hr->{'get_mode_string'} ) eq 'CODE' ? ( $args_hr->{'get_mode_string'}->($file) || 0 ) : get_mode_string($file);
 
         if ( -l $file ) {
             my $point = readlink($file);
@@ -333,7 +333,7 @@ sub _get_opts_hash {
 sub build_cpanelsync {
     my ( $dir, $verbose ) = @_;
     my $args_hr = ref($verbose) ? $verbose : { 'verbose' => $verbose };
-    
+
     my $is_ok = 1;
     if ( !$dir || !-d $dir ) {
         Carp::croak "Invalid directory";
@@ -378,7 +378,7 @@ sub build_cpanelsync {
             next FILE if -e $tfile;
         }
 
-        my $perms = ref( $args_hr->{'get_mode_string'} ) eq 'CODE' ? ($args_hr->{'get_mode_string'}->($file) || 0) : get_mode_string($file);
+        my $perms = ref( $args_hr->{'get_mode_string'} ) eq 'CODE' ? ( $args_hr->{'get_mode_string'}->($file) || 0 ) : get_mode_string($file);
 
         if ( -l $file ) {
             my $point = readlink($file);
