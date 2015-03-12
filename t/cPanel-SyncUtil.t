@@ -120,7 +120,7 @@ ok( my @files = _read_dir('.'), '_read_dir function call' );
 ok( @files == 3, '_read_dir results' );
 
 # _sync_touchlock_pwd
-diag('Running _sync_touchlock_pwd()');
+note('Running _sync_touchlock_pwd()');
 ok( _sync_touchlock_pwd(), '_sync_touchlock_pwd function call' );
 for(qw( .cpanelsync .cpanelsync.bz2 .cpanelsync.lock filea.bz2 )) {
     ok( -e $_, "_sync_touchlock_pwd $_" );
@@ -209,7 +209,7 @@ ok( @files == 6, "_read_dir_recursively results match expected count" );
         return get_mode_string($file)
     };
 
-    diag('Running build_cpanelsync()');
+    note('Running build_cpanelsync()');
     ok( build_cpanelsync( File::Spec->catfile($testdir2, 'build_cpanelsync'), { 'get_mode_string' => $test_get_mode_string } ), 'build_cpanelsync function call' );
 
     if (!$test_mode_called) {
@@ -223,7 +223,7 @@ for(qw( .cpanelsync .cpanelsync.lock )) {
 }
 
 # Compress files and create tar ball
-diag('Running compress_files()');
+note('Running compress_files()');
 ok( compress_files( File::Spec->catfile($testdir2, 'compress_only') ), 'compress_files function call' );
 for(qw( .cpanelsync.bz2 filea.bz2 fileb.bz2 )) {
     my $file = File::Spec->catfile($testdir2, 'compress_only', $_);
