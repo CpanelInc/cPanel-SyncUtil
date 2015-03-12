@@ -2,6 +2,8 @@ Revision history for Perl extension cPanel::SyncUtil.
 
 0.8  Fri Mar  6 11:50:00 2015
     - sha512 hash added to .cpanelsync for files
+    - Clean up make test diag messages
+    - Fix hash radomization issue with unit tests in perl 5.18
 
 0.7  Wed Jan 26 07:34:41 2011
     - set $File::Find::prune when %ignore_name is triggered (thanks TODDR)
