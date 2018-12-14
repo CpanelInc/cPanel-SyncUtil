@@ -5,6 +5,7 @@ WriteMakefile(
     ABSTRACT_FROM => 'lib/cPanel/SyncUtil.pm',
     AUTHOR        => 'cPanel Inc. <http://cpanel.net>',
     VERSION_FROM  => 'lib/cPanel/SyncUtil.pm',
+    LICENSE       => 'perl_5',
     PREREQ_PM     => {
         'File::Slurp'       => 0,
         'File::Find'        => 0,
